@@ -37,9 +37,9 @@ class Config:
             "api_url": "https://nano-gpt.com/api/v1/chat/completions",  # NanoGPT default
             "api_key": "Enter Key",
             "default_language": "English",
-            "text_model": "deepseek-ai/deepseek-v3.2-exp",
+            "text_model": "deepseek-ai/DeepSeek-V3.1-Terminus",
             "premium_text_model": "gpt-5-chat-latest",
-            "vision_model": "zai-org/GLM-4.5V-FP8",
+            "vision_model": "Qwen/Qwen3-VL-235B-A22B-Instruct",
             "use_premium": False,
         }
 
@@ -102,6 +102,7 @@ class ProcessingDialog(Gtk.Window):
         vbox.pack_start(cancel_button, False, False, 0)
 
         self.show_all()
+        self.present()
 
     def update_status(self, message):
         """Update status message"""
@@ -215,6 +216,7 @@ class ScreenshotConfirmDialog(Gtk.Window):
         vbox.pack_start(button_box, False, False, 0)
 
         self.show_all()
+        self.present()
         submit_button.grab_focus()
 
     def on_cancel(self, widget):
@@ -284,6 +286,7 @@ class ClipboardConfirmDialog(Gtk.Window):
         vbox.pack_start(button_box, False, False, 0)
 
         self.show_all()
+        self.present()
         self.textview.grab_focus()
 
     def on_submit(self, widget):
@@ -420,6 +423,7 @@ class SettingsDialog(Gtk.Dialog):
         box.pack_start(info_label, False, False, 0)
 
         self.show_all()
+        self.present()
 
     def add_field(self, box, label_text, config_key):
         """Add a label and entry field"""
@@ -551,6 +555,7 @@ class TextQueryDialog(Gtk.Window):
         vbox.pack_start(button_box, False, False, 0)
 
         self.show_all()
+        self.present()
         self.radio_summarize.grab_focus()
 
     def on_submit(self, widget):
@@ -696,6 +701,7 @@ class ImageQueryDialog(Gtk.Window):
         vbox.pack_start(button_box, False, False, 0)
 
         self.show_all()
+        self.present()
         self.radio_summarize.grab_focus()
 
     def on_submit(self, widget):
@@ -880,6 +886,259 @@ class ScreenSelector(Gtk.Window):
         """Cancel on ESC"""
         if event.keyval == Gdk.KEY_Escape:
             self.destroy()
+
+class ResultDialogWithChat(Gtk.Window):
+    """Interactive result dialog with follow-up question capability"""
+    def __init__(self, title, initial_response, conversation_history, assistant):
+        super().__init__(title=title)
+        self.assistant = assistant
+        self.use_premium_for_followup = False  # Per-conversation premium toggle
+        
+        # Initialize or use provided conversation history
+        if conversation_history:
+            self.conversation_history = conversation_history
+        else:
+            # Create initial conversation history from the response
+            self.conversation_history = [
+                {"role": "assistant", "content": initial_response}
+            ]
+        
+        self.set_default_size(700, 600)
+        self.set_position(Gtk.WindowPosition.CENTER)
+        
+        # Main vertical box
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        self.add(vbox)
+        
+        # Scrolled window for conversation display
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        scrolled.set_hexpand(True)
+        scrolled.set_vexpand(True)
+        
+        self.textview = Gtk.TextView()
+        self.textview.set_editable(False)
+        self.textview.set_wrap_mode(Gtk.WrapMode.WORD)
+        self.textview.set_margin_start(15)
+        self.textview.set_margin_end(15)
+        self.textview.set_margin_top(15)
+        self.textview.set_margin_bottom(15)
+        self.textview.set_left_margin(10)
+        self.textview.set_right_margin(10)
+        
+        # Use monospace font
+        font_desc = Pango.FontDescription("Monospace 10")
+        self.textview.modify_font(font_desc)
+        
+        self.textbuffer = self.textview.get_buffer()
+        
+        scrolled.add(self.textview)
+        vbox.pack_start(scrolled, True, True, 0)
+        
+        # Separator
+        separator = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+        vbox.pack_start(separator, False, False, 0)
+        
+        # Follow-up input area
+        input_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+        input_box.set_margin_start(10)
+        input_box.set_margin_end(10)
+        input_box.set_margin_top(10)
+        input_box.set_margin_bottom(10)
+        
+        # Label
+        followup_label = Gtk.Label(label="Ask a follow-up question:")
+        followup_label.set_xalign(0)
+        input_box.pack_start(followup_label, False, False, 0)
+        
+        # Text input for follow-up
+        scrolled_input = Gtk.ScrolledWindow()
+        scrolled_input.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        scrolled_input.set_min_content_height(60)
+        
+        self.followup_textview = Gtk.TextView()
+        self.followup_textview.set_wrap_mode(Gtk.WrapMode.WORD)
+        self.followup_textview.set_margin_start(5)
+        self.followup_textview.set_margin_end(5)
+        self.followup_textview.set_margin_top(5)
+        self.followup_textview.set_margin_bottom(5)
+        scrolled_input.add(self.followup_textview)
+        
+        input_box.pack_start(scrolled_input, False, False, 0)
+        
+        # Bottom button box
+        button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        
+        # Premium model checkbox
+        self.premium_checkbox = Gtk.CheckButton.new_with_label("Use Premium Model")
+        self.premium_checkbox.set_active(False)
+        self.premium_checkbox.connect("toggled", self.on_premium_toggled)
+        button_box.pack_start(self.premium_checkbox, False, False, 0)
+        
+        # Spacer
+        button_box.pack_start(Gtk.Box(), True, True, 0)
+        
+        # Send button
+        self.send_button = Gtk.Button.new_with_label("Send")
+        self.send_button.connect("clicked", self.on_send_followup)
+        button_box.pack_end(self.send_button, False, False, 0)
+        
+        # Copy button
+        copy_button = Gtk.Button.new_with_label("Copy All")
+        copy_button.connect("clicked", self.on_copy_all)
+        button_box.pack_end(copy_button, False, False, 0)
+        
+        # Close button
+        close_button = Gtk.Button.new_with_label("Close")
+        close_button.connect("clicked", lambda w: self.destroy())
+        button_box.pack_end(close_button, False, False, 0)
+        
+        input_box.pack_start(button_box, False, False, 0)
+        vbox.pack_start(input_box, False, False, 0)
+        
+        # Display initial conversation
+        self.update_conversation_display()
+        
+        self.show_all()
+        self.present()
+        
+        # Focus on input
+        self.followup_textview.grab_focus()
+    
+    def on_premium_toggled(self, widget):
+        """Handle premium checkbox toggle"""
+        self.use_premium_for_followup = widget.get_active()
+    
+    def update_conversation_display(self):
+        """Update the conversation display with all messages"""
+        self.textbuffer.set_text("")
+        
+        full_text = ""
+        for i, msg in enumerate(self.conversation_history):
+            role = msg["role"]
+            content = msg["content"]
+            
+            # Check if this is a premium response
+            is_premium = msg.get("is_premium", False)
+            
+            if role == "user":
+                full_text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                full_text += "You:\n"
+                full_text += content + "\n\n"
+            else:  # assistant
+                full_text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                if is_premium:
+                    full_text += "Assistant: ✨ Premium\n"
+                else:
+                    full_text += "Assistant:\n"
+                full_text += content + "\n\n"
+        
+        # Try to render as Pango markup
+        try:
+            pango_markup = MarkdownRenderer.to_pango(full_text)
+            self.textbuffer.insert_markup(self.textbuffer.get_start_iter(), pango_markup, -1)
+        except:
+            self.textbuffer.set_text(full_text)
+        
+        # Scroll to bottom
+        end_iter = self.textbuffer.get_end_iter()
+        self.textview.scroll_to_iter(end_iter, 0.0, False, 0.0, 0.0)
+    
+    def on_send_followup(self, widget):
+        """Handle sending a follow-up question"""
+        # Get the follow-up question
+        textbuffer = self.followup_textview.get_buffer()
+        start = textbuffer.get_start_iter()
+        end = textbuffer.get_end_iter()
+        followup_text = textbuffer.get_text(start, end, False).strip()
+        
+        if not followup_text:
+            dialog = Gtk.MessageDialog(
+                parent=self,
+                flags=0,
+                message_type=Gtk.MessageType.WARNING,
+                buttons=Gtk.ButtonsType.OK,
+                text="Please enter a follow-up question"
+            )
+            dialog.run()
+            dialog.destroy()
+            return
+        
+        # Clear the input
+        textbuffer.set_text("")
+        
+        # Disable send button during processing
+        self.send_button.set_sensitive(False)
+        
+        # Add user message to history
+        self.conversation_history.append({
+            "role": "user",
+            "content": followup_text
+        })
+        
+        # Update display
+        self.update_conversation_display()
+        
+        # Show processing dialog
+        progress_dialog = ProcessingDialog("Processing Follow-up")
+        
+        # Determine which model to use
+        if self.use_premium_for_followup:
+            model = self.assistant.config.premium_text_model
+            is_premium = True
+        else:
+            model = self.assistant.get_active_text_model()
+            is_premium = False
+        
+        def process():
+            # Call LLM with full conversation history
+            result = self.assistant.call_llm_streaming(
+                model,
+                self.conversation_history,
+                None,
+                progress_dialog
+            )
+            
+            if not progress_dialog.cancelled and result:
+                # Add assistant response to history
+                self.conversation_history.append({
+                    "role": "assistant",
+                    "content": result,
+                    "is_premium": is_premium
+                })
+                
+                GLib.idle_add(progress_dialog.destroy)
+                GLib.idle_add(self.update_conversation_display)
+                GLib.idle_add(self.send_button.set_sensitive, True)
+            elif progress_dialog.cancelled:
+                # Remove the user message if cancelled
+                self.conversation_history.pop()
+                GLib.idle_add(progress_dialog.destroy)
+                GLib.idle_add(self.update_conversation_display)
+                GLib.idle_add(self.send_button.set_sensitive, True)
+        
+        threading.Thread(target=process, daemon=True).start()
+    
+    def on_copy_all(self, widget):
+        """Copy entire conversation to clipboard"""
+        full_text = ""
+        for msg in self.conversation_history:
+            role = msg["role"]
+            content = msg["content"]
+            is_premium = msg.get("is_premium", False)
+            
+            if role == "user":
+                full_text += "You:\n" + content + "\n\n"
+            else:
+                if is_premium:
+                    full_text += "Assistant (Premium):\n" + content + "\n\n"
+                else:
+                    full_text += "Assistant:\n" + content + "\n\n"
+        
+        clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+        clipboard.set_text(full_text, -1)
+        clipboard.store()
+        self.assistant.show_notification("Conversation copied to clipboard")
 
 class LLMAssistant:
     """Main application"""
@@ -1122,8 +1381,13 @@ class LLMAssistant:
             result = self.call_llm_streaming(self.get_active_text_model(), messages, None, progress_dialog)
 
             if not progress_dialog.cancelled and result:
+                # Build conversation history for follow-ups
+                conversation_history = [
+                    {"role": "user", "content": f"Translate the following text to {self.config.default_language}. Respond in Markdown format. Only provide the translation, no explanations:\n\n{text}"},
+                    {"role": "assistant", "content": result}
+                ]
                 GLib.idle_add(progress_dialog.destroy)
-                GLib.idle_add(self.show_result, "Translation", result)
+                GLib.idle_add(self.show_result, "Translation", result, conversation_history)
             elif progress_dialog.cancelled:
                 GLib.idle_add(progress_dialog.destroy)
 
@@ -1215,8 +1479,13 @@ class LLMAssistant:
             final_result = self.call_llm_streaming(self.get_active_text_model(), translate_messages, None, progress_dialog)
 
             if not progress_dialog.cancelled and final_result:
+                # Build conversation history with extracted text context
+                conversation_history = [
+                    {"role": "user", "content": f"Here is text extracted from an image:\n\n{ocr_result}\n\nTranslate this to {self.config.default_language}."},
+                    {"role": "assistant", "content": final_result}
+                ]
                 GLib.idle_add(progress_dialog.destroy)
-                GLib.idle_add(self.show_result, "OCR + Translation", final_result)
+                GLib.idle_add(self.show_result, "OCR + Translation", final_result, conversation_history)
             elif progress_dialog.cancelled:
                 GLib.idle_add(progress_dialog.destroy)
 
@@ -1423,8 +1692,13 @@ Please answer the user's question based on both the extracted text and visual de
             final_result = self.call_llm_streaming(self.get_active_text_model(), query_messages, None, progress_dialog)
 
             if not progress_dialog.cancelled and final_result:
+                # Build conversation history with image context
+                conversation_history = [
+                    {"role": "user", "content": combined_prompt},
+                    {"role": "assistant", "content": final_result}
+                ]
                 GLib.idle_add(progress_dialog.destroy)
-                GLib.idle_add(self.show_result, "Query Result", final_result)
+                GLib.idle_add(self.show_result, "Query Result", final_result, conversation_history)
             elif progress_dialog.cancelled:
                 GLib.idle_add(progress_dialog.destroy)
 
@@ -1467,84 +1741,22 @@ Please answer the user's question based on the provided text. Respond in {self.c
             result = self.call_llm_streaming(self.get_active_text_model(), messages, None, progress_dialog)
 
             if not progress_dialog.cancelled and result:
+                # Build conversation history with text context
+                conversation_history = [
+                    {"role": "user", "content": combined_prompt},
+                    {"role": "assistant", "content": result}
+                ]
                 GLib.idle_add(progress_dialog.destroy)
-                GLib.idle_add(self.show_result, "Query Result", result)
+                GLib.idle_add(self.show_result, "Query Result", result, conversation_history)
             elif progress_dialog.cancelled:
                 GLib.idle_add(progress_dialog.destroy)
 
         threading.Thread(target=process, daemon=True).start()
 
-    def show_result(self, title, markdown_text):
-        """Show result in a custom dialog with Markdown rendering"""
-        # Create a regular window
-        dialog = Gtk.Window(title=title)
-        dialog.set_default_size(700, 500)
-        dialog.set_position(Gtk.WindowPosition.CENTER)
-
-        # Main vertical box
-        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        dialog.add(vbox)
-
-        # Scrolled window with text view
-        scrolled = Gtk.ScrolledWindow()
-        scrolled.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-        scrolled.set_hexpand(True)
-        scrolled.set_vexpand(True)
-
-        textview = Gtk.TextView()
-        textview.set_editable(False)
-        textview.set_wrap_mode(Gtk.WrapMode.WORD)
-        textview.set_margin_start(15)
-        textview.set_margin_end(15)
-        textview.set_margin_top(15)
-        textview.set_margin_bottom(15)
-        textview.set_left_margin(10)
-        textview.set_right_margin(10)
-
-        # Use monospace font for code blocks
-        font_desc = Pango.FontDescription("Monospace 10")
-        textview.modify_font(font_desc)
-
-        textbuffer = textview.get_buffer()
-
-        # Try to render as Pango markup for simple markdown
-        try:
-            pango_markup = MarkdownRenderer.to_pango(markdown_text)
-            textbuffer.insert_markup(textbuffer.get_start_iter(), pango_markup, -1)
-        except:
-            # Fallback to plain text if markup fails
-            textbuffer.set_text(markdown_text)
-
-        scrolled.add(textview)
-        vbox.pack_start(scrolled, True, True, 0)
-
-        # Button box at bottom
-        button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        button_box.set_margin_start(10)
-        button_box.set_margin_end(10)
-        button_box.set_margin_top(10)
-        button_box.set_margin_bottom(10)
-
-        # Copy button
-        copy_button = Gtk.Button.new_with_label("Copy to Clipboard")
-        copy_button.connect("clicked", lambda w: self._copy_to_clipboard(markdown_text))
-        button_box.pack_start(copy_button, False, False, 0)
-
-        # Spacer
-        button_box.pack_start(Gtk.Box(), True, True, 0)
-
-        # Close button
-        close_button = Gtk.Button.new_with_label("Close")
-        close_button.connect("clicked", lambda w: dialog.destroy())
-        button_box.pack_end(close_button, False, False, 0)
-
-        vbox.pack_start(button_box, False, False, 0)
-
-        # Show everything
-        dialog.show_all()
-
-        # Make close button focused by default
-        close_button.grab_focus()
+    def show_result(self, title, markdown_text, conversation_history=None):
+        """Show result in a custom dialog with Markdown rendering and follow-up capability"""
+        # Create interactive result dialog
+        ResultDialogWithChat(title, markdown_text, conversation_history, self)
 
     def _copy_to_clipboard(self, text):
         """Copy text to clipboard"""
