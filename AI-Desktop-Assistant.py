@@ -40,7 +40,6 @@ class Config:
             "text_model": "deepseek-ai/deepseek-v3.2-exp",
             "premium_text_model": "gpt-5-chat-latest",
             "vision_model": "zai-org/GLM-4.5V-FP8",
-            "ocr_model": "zai-org/GLM-4.5V-FP8",
             "use_premium": False,
         }
 
@@ -65,7 +64,6 @@ class Config:
             "text_model": self.text_model,
             "premium_text_model": self.premium_text_model,
             "vision_model": self.vision_model,
-            "ocr_model": self.ocr_model,
             "use_premium": self.use_premium,
         }
         with open(self.config_file, 'w') as f:
@@ -304,12 +302,9 @@ class HotkeyManager:
     # Hotkey definitions: (modifiers, keysym, callback_name)
     HOTKEYS = [
         (X.ControlMask | X.ShiftMask, XK.XK_1, 'translate_text'),
-        (X.ControlMask | X.ShiftMask, XK.XK_2, 'explain_text'),
-        (X.ControlMask | X.ShiftMask, XK.XK_3, 'ocr_translate'),
-        (X.ControlMask | X.ShiftMask, XK.XK_4, 'explain_image'),
-        (X.ControlMask | X.ShiftMask, XK.XK_5, 'ocr_explain'),
-        (X.ControlMask | X.ShiftMask, XK.XK_6, 'query_image'),
-        (X.ControlMask | X.ShiftMask, XK.XK_7, 'query_text'),
+        (X.ControlMask | X.ShiftMask, XK.XK_2, 'ocr_translate'),
+        (X.ControlMask | X.ShiftMask, XK.XK_3, 'query_text'),
+        (X.ControlMask | X.ShiftMask, XK.XK_4, 'query_image'),
     ]
 
     def __init__(self, callback_object):
@@ -408,7 +403,6 @@ class SettingsDialog(Gtk.Dialog):
         self.add_field(box, "Text Model:", "text_model")
         self.add_field(box, "Premium Text Model:", "premium_text_model")
         self.add_field(box, "Vision Model:", "vision_model")
-        self.add_field(box, "OCR Model:", "ocr_model")
 
         # Add info label about hotkeys
         separator = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
@@ -417,13 +411,10 @@ class SettingsDialog(Gtk.Dialog):
         info_label = Gtk.Label()
         info_label.set_markup(
             "<b>Hotkeys:</b>\n"
-            "Ctrl+Shift+1: Translate clipboard\n"
-            "Ctrl+Shift+2: Explain clipboard\n"
-            "Ctrl+Shift+3: OCR + Translate\n"
-            "Ctrl+Shift+4: Explain image\n"
-            "Ctrl+Shift+5: OCR + Explain\n"
-            "Ctrl+Shift+6: Query image with custom prompt\n"
-            "Ctrl+Shift+7: Query clipboard text with custom prompt"
+            "Ctrl+Shift+1: Translate clipboard text\n"
+            "Ctrl+Shift+2: Translate image selection\n"
+            "Ctrl+Shift+3: Query clipboard text\n"
+            "Ctrl+Shift+4: Query image selection"
         )
         info_label.set_xalign(0)
         box.pack_start(info_label, False, False, 0)
@@ -453,7 +444,6 @@ class SettingsDialog(Gtk.Dialog):
             "text_model": self.entry_text_model.get_text(),
             "premium_text_model": self.entry_premium_text_model.get_text(),
             "vision_model": self.entry_vision_model.get_text(),
-            "ocr_model": self.entry_ocr_model.get_text(),
         }
 
 class TextQueryDialog(Gtk.Window):
@@ -615,7 +605,7 @@ class ImageQueryDialog(Gtk.Window):
         # Image preview (scrollable)
         scrolled_img = Gtk.ScrolledWindow()
         scrolled_img.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-        scrolled_img.set_min_content_height(300)
+        scrolled_img.set_min_content_height(250)
 
         # Convert PIL image to GdkPixbuf
         img_bytes = BytesIO()
@@ -628,7 +618,7 @@ class ImageQueryDialog(Gtk.Window):
 
         # Scale image if too large
         max_width = 780
-        max_height = 400
+        max_height = 300
         if pixbuf.get_width() > max_width or pixbuf.get_height() > max_height:
             # Calculate scaling to fit within bounds while maintaining aspect ratio
             scale = min(max_width / pixbuf.get_width(), max_height / pixbuf.get_height())
@@ -641,25 +631,53 @@ class ImageQueryDialog(Gtk.Window):
 
         vbox.pack_start(scrolled_img, True, True, 0)
 
-        # Prompt label
-        prompt_label = Gtk.Label(label="Enter your question about this image:")
-        prompt_label.set_xalign(0)
-        vbox.pack_start(prompt_label, False, False, 0)
+        # Separator
+        separator = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+        vbox.pack_start(separator, False, False, 5)
 
-        # Text entry for prompt
+        # Query options label
+        query_label = Gtk.Label(label="Select a question or enter your own:")
+        query_label.set_xalign(0)
+        vbox.pack_start(query_label, False, False, 0)
+
+        # Radio buttons for preset queries
+        self.radio_summarize = Gtk.RadioButton.new_with_label_from_widget(
+            None, "Summarize what you see in this image."
+        )
+        vbox.pack_start(self.radio_summarize, False, False, 0)
+
+        self.radio_explain = Gtk.RadioButton.new_with_label_from_widget(
+            self.radio_summarize, "Explain the image concisely and simply."
+        )
+        vbox.pack_start(self.radio_explain, False, False, 0)
+
+        self.radio_accuracy = Gtk.RadioButton.new_with_label_from_widget(
+            self.radio_summarize, "Tell me if the information in this image is accurate and why or why not?"
+        )
+        vbox.pack_start(self.radio_accuracy, False, False, 0)
+
+        self.radio_custom = Gtk.RadioButton.new_with_label_from_widget(
+            self.radio_summarize, "Custom question:"
+        )
+        vbox.pack_start(self.radio_custom, False, False, 0)
+
+        # Custom query text entry
         scrolled_text = Gtk.ScrolledWindow()
         scrolled_text.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-        scrolled_text.set_min_content_height(80)
+        scrolled_text.set_min_content_height(60)
 
-        self.textview = Gtk.TextView()
-        self.textview.set_wrap_mode(Gtk.WrapMode.WORD)
-        self.textview.set_margin_start(5)
-        self.textview.set_margin_end(5)
-        self.textview.set_margin_top(5)
-        self.textview.set_margin_bottom(5)
-        scrolled_text.add(self.textview)
+        self.custom_textview = Gtk.TextView()
+        self.custom_textview.set_wrap_mode(Gtk.WrapMode.WORD)
+        self.custom_textview.set_margin_start(5)
+        self.custom_textview.set_margin_end(5)
+        self.custom_textview.set_margin_top(5)
+        self.custom_textview.set_margin_bottom(5)
+        scrolled_text.add(self.custom_textview)
 
         vbox.pack_start(scrolled_text, False, False, 0)
+
+        # Connect custom text view focus to select custom radio button
+        self.custom_textview.connect("focus-in-event", lambda w, e: self.radio_custom.set_active(True))
 
         # Button box
         button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -678,29 +696,38 @@ class ImageQueryDialog(Gtk.Window):
         vbox.pack_start(button_box, False, False, 0)
 
         self.show_all()
-        self.textview.grab_focus()
+        self.radio_summarize.grab_focus()
 
     def on_submit(self, widget):
         """Handle submit button"""
-        textbuffer = self.textview.get_buffer()
-        start = textbuffer.get_start_iter()
-        end = textbuffer.get_end_iter()
-        user_query = textbuffer.get_text(start, end, False).strip()
+        # Determine which query to use
+        if self.radio_summarize.get_active():
+            query = "Summarize what you see in this image."
+        elif self.radio_explain.get_active():
+            query = "Explain the image concisely and simply."
+        elif self.radio_accuracy.get_active():
+            query = "Tell me if the information in this image is accurate and why or why not?"
+        else:  # custom
+            textbuffer = self.custom_textview.get_buffer()
+            start = textbuffer.get_start_iter()
+            end = textbuffer.get_end_iter()
+            query = textbuffer.get_text(start, end, False).strip()
 
-        if user_query:
-            self.destroy()
-            self.callback(self.screenshot, user_query)
-        else:
-            # Show error dialog
-            dialog = Gtk.MessageDialog(
-                parent=self,
-                flags=0,
-                message_type=Gtk.MessageType.WARNING,
-                buttons=Gtk.ButtonsType.OK,
-                text="Please enter a question"
-            )
-            dialog.run()
-            dialog.destroy()
+            if not query:
+                # Show error dialog
+                dialog = Gtk.MessageDialog(
+                    parent=self,
+                    flags=0,
+                    message_type=Gtk.MessageType.WARNING,
+                    buttons=Gtk.ButtonsType.OK,
+                    text="Please enter a custom question or select a preset option"
+                )
+                dialog.run()
+                dialog.destroy()
+                return
+
+        self.destroy()
+        self.callback(self.screenshot, query)
 
 class ScreenSelector(Gtk.Window):
     """Full-screen overlay for selecting screen region across all monitors"""
@@ -893,34 +920,22 @@ class LLMAssistant:
 
         menu.append(Gtk.SeparatorMenuItem())
 
-        # Add manual trigger items for testing
-        item_translate = Gtk.MenuItem(label="Translate Clipboard (Ctrl+Shift+1)")
+        # Add manual trigger items for the 4 main functions
+        item_translate = Gtk.MenuItem(label="Translate Clipboard Text (Ctrl+Shift+1)")
         item_translate.connect("activate", lambda w: self.translate_text())
         menu.append(item_translate)
 
-        item_explain = Gtk.MenuItem(label="Explain Clipboard (Ctrl+Shift+2)")
-        item_explain.connect("activate", lambda w: self.explain_text())
-        menu.append(item_explain)
-
-        item_ocr_trans = Gtk.MenuItem(label="OCR + Translate (Ctrl+Shift+3)")
+        item_ocr_trans = Gtk.MenuItem(label="Translate Image Selection (Ctrl+Shift+2)")
         item_ocr_trans.connect("activate", lambda w: self.ocr_translate())
         menu.append(item_ocr_trans)
 
-        item_img_explain = Gtk.MenuItem(label="Explain Image (Ctrl+Shift+4)")
-        item_img_explain.connect("activate", lambda w: self.explain_image())
-        menu.append(item_img_explain)
-
-        item_ocr_explain = Gtk.MenuItem(label="OCR + Explain (Ctrl+Shift+5)")
-        item_ocr_explain.connect("activate", lambda w: self.ocr_explain())
-        menu.append(item_ocr_explain)
-
-        item_query = Gtk.MenuItem(label="Query Image (Ctrl+Shift+6)")
-        item_query.connect("activate", lambda w: self.query_image())
-        menu.append(item_query)
-
-        item_query_text = Gtk.MenuItem(label="Query Text (Ctrl+Shift+7)")
+        item_query_text = Gtk.MenuItem(label="Query Clipboard Text (Ctrl+Shift+3)")
         item_query_text.connect("activate", lambda w: self.query_text())
         menu.append(item_query_text)
+
+        item_query = Gtk.MenuItem(label="Query Image Selection (Ctrl+Shift+4)")
+        item_query.connect("activate", lambda w: self.query_image())
+        menu.append(item_query)
 
         menu.append(Gtk.SeparatorMenuItem())
 
@@ -1012,7 +1027,7 @@ class LLMAssistant:
                 headers=headers,
                 json=data,
                 stream=True,
-                timeout=10
+                timeout=120
             )
             response.raise_for_status()
 
@@ -1184,7 +1199,7 @@ class LLMAssistant:
                 "role": "user",
                 "content": "Extract all text from this image. Only provide the extracted text, no explanations."
             }]
-            ocr_result = self.call_llm(self.config.ocr_model, ocr_messages, img_base64)
+            ocr_result = self.call_llm(self.config.vision_model, ocr_messages, img_base64)
 
             if progress_dialog.cancelled:
                 GLib.idle_add(progress_dialog.destroy)
@@ -1285,7 +1300,7 @@ class LLMAssistant:
                 "role": "user",
                 "content": "Extract all text from this image. Only provide the extracted text."
             }]
-            ocr_result = self.call_llm(self.config.ocr_model, ocr_messages, img_base64)
+            ocr_result = self.call_llm(self.config.vision_model, ocr_messages, img_base64)
 
             if progress_dialog.cancelled:
                 GLib.idle_add(progress_dialog.destroy)
@@ -1319,7 +1334,7 @@ class LLMAssistant:
         ImageQueryDialog(screenshot, self._process_query_image)
 
     def _process_query_image(self, screenshot_param, user_query):
-        """Process image query with user's custom prompt"""
+        """Process image query with user's custom prompt using concurrent OCR + Vision"""
         progress_dialog = ProcessingDialog("Processing Query")
 
         # Convert to base64 BEFORE starting thread
@@ -1331,46 +1346,70 @@ class LLMAssistant:
         del screenshot_param
 
         def process():
-            GLib.idle_add(progress_dialog.update_status, "Extracting text from image...")
+            GLib.idle_add(progress_dialog.update_status, "Analyzing image (OCR + Vision)...")
 
             if progress_dialog.cancelled:
                 GLib.idle_add(progress_dialog.destroy)
                 return
 
-            # Step 1: OCR
-            ocr_messages = [{
-                "role": "user",
-                "content": "Extract all text from this image. Only provide the extracted text, no explanations. If there is no text, respond with 'No text found'."
-            }]
-            ocr_result = self.call_llm(self.config.ocr_model, ocr_messages, img_base64)
+            # Run OCR and Vision concurrently using threads
+            ocr_result = [None]
+            vision_result = [None]
+            ocr_error = [None]
+            vision_error = [None]
+
+            def run_ocr():
+                try:
+                    ocr_messages = [{
+                        "role": "user",
+                        "content": "Extract all text from this image. Only provide the extracted text, no explanations. If there is no text, respond with 'No text found'."
+                    }]
+                    ocr_result[0] = self.call_llm(self.config.vision_model, ocr_messages, img_base64)
+                except Exception as e:
+                    ocr_error[0] = str(e)
+
+            def run_vision():
+                try:
+                    vision_messages = [{
+                        "role": "user",
+                        "content": "Describe what you see in this image in detail. Focus on the main elements, layout, and visual characteristics."
+                    }]
+                    vision_result[0] = self.call_llm(self.config.vision_model, vision_messages, img_base64)
+                except Exception as e:
+                    vision_error[0] = str(e)
+
+            # Start both operations concurrently
+            ocr_thread = threading.Thread(target=run_ocr)
+            vision_thread = threading.Thread(target=run_vision)
+            
+            ocr_thread.start()
+            vision_thread.start()
+
+            # Wait for both to complete
+            ocr_thread.join()
+            vision_thread.join()
 
             if progress_dialog.cancelled:
                 GLib.idle_add(progress_dialog.destroy)
                 return
 
-            GLib.idle_add(progress_dialog.update_status, "Analyzing image visually...")
-
-            # Step 2: Vision
-            vision_messages = [{
-                "role": "user",
-                "content": "Describe what you see in this image in detail. Focus on the main elements, layout, and visual characteristics."
-            }]
-            vision_result = self.call_llm(self.config.vision_model, vision_messages, img_base64)
-
-            if progress_dialog.cancelled:
+            # Check for errors
+            if ocr_error[0] or vision_error[0]:
+                error_msg = f"OCR Error: {ocr_error[0]}\nVision Error: {vision_error[0]}"
                 GLib.idle_add(progress_dialog.destroy)
+                GLib.idle_add(self.show_result, "Error", error_msg)
                 return
 
             GLib.idle_add(progress_dialog.update_status, "Generating answer...")
 
-            # Step 3: Combine and answer
+            # Combine and answer
             combined_prompt = f"""You are analyzing an image for a user. Here is the information extracted from the image:
 
 TEXT EXTRACTED FROM IMAGE:
-{ocr_result}
+{ocr_result[0]}
 
 VISUAL DESCRIPTION OF IMAGE:
-{vision_result}
+{vision_result[0]}
 
 USER'S QUESTION:
 {user_query}
@@ -1527,12 +1566,9 @@ Please answer the user's question based on the provided text. Respond in {self.c
         print("=" * 60)
         print("\nGlobal Hotkeys:")
         print("  Ctrl+Shift+1 - Translate clipboard text")
-        print("  Ctrl+Shift+2 - Explain clipboard text")
-        print("  Ctrl+Shift+3 - OCR + Translate screenshot")
-        print("  Ctrl+Shift+4 - Explain screenshot")
-        print("  Ctrl+Shift+5 - OCR + Explain screenshot")
-        print("  Ctrl+Shift+6 - Query screenshot with custom prompt")
-        print("  Ctrl+Shift+7 - Query clipboard text with custom prompt")
+        print("  Ctrl+Shift+2 - Translate image selection (OCR + Translate)")
+        print("  Ctrl+Shift+3 - Query clipboard text")
+        print("  Ctrl+Shift+4 - Query image selection (OCR + Vision)")
         print("\nCheck system tray for menu and settings")
         print("=" * 60 + "\n")
 
