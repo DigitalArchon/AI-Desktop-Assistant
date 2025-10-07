@@ -1,5 +1,5 @@
 # AI-Desktop-Assistant
-A simple python tool that allows quick AI lookups of text or screen grabs for things like translation, queries, OCR, etc.
+A simple python tool that allows quick AI lookups of text or screen grabs for things like translation, queries, OCR, etc. Works with any OpenAI compatible endpoint.
 
 # Dependencies
 python3-gi, python3-pil, python3-requests, AppIndicator3.0.1, python3-gi-cairo, gir1.2-gtk-3.0
@@ -14,14 +14,13 @@ There is a toggle to use a premium text model instead of what you set as the def
 For OCR and image recognition in general, I find GLM and other models more than good enough. But for text, sometimes Deepseek isn't as good at ChatGPT or other more expensive models that aren't included in the subscription. So I've set a toggle to use a
 more advanced and thus more expensive model only when needed.
 
-The app has 7 functions, with hard coded shortcut keys (sorry).
+The app has 4 main functions, with hard coded shortcut keys (sorry).
 1) Whatever text is in your clipboard will be translated to your selected language.
-2) Whatever text in your clipboard will be explained by the text model (useful if you don't understand something you're reading, error messages, complex jargon, etc.)
-3) Will use the OCR model to extract the text from a selected area of your screen and then translate it to your default language using your text model (two steps). Useful when you can't highlight and copy text, such as on some annoying websites, or in images.
-4) Explain image. This uses the Vision Model to explain what is in the selected area. Just a single query to the AI to get its direct output.
-5) OCR + Explain. This uses the OCR model to extract the text from the selected area, then uses the text model to explain it.
-6) Query Image. This is a more advanced function. It uses the OCR model to extract the text from the selection, the Vision Model to describe the image, then allows you to enter text to ask whatever you want of the text model. The OCR text, the image description and your query are all sent to the Text Model to answer.
-7) Query Text. Allows you to ask a custom question to the Text Model about whatever text is in your clipboard.
+2) Allows you to select an area of your screen to perform OCR on and translate to your selected language (useful for translating text in images or on parts of websites where you can't select the text.)
+3) Let's you ask the text model about whatever text you have in your clipboard, gives some default options or lets you ask your own question.
+4) This is a more advanced mode. It lets you select an area of your screen and ask any question about it. It will use your select vision model both to perform OCR and to extract information about the image in general and allow you to ask whatever question about it.
+
+Once you get a response from the AI model, you can then chat with it further if you want to clarify anything.
 
 # Important Notes
-I made this for myself, to work on my own device. It is 90% vibe coded, 10% manually tweaked. It should work on any Linux system with a Cinnamon desktop. I've only tested it on Linux Mint Cinnamon 22.2, it may work on other systems, but I've never tested it on anything else. Assume if you use this application it will end in disaster, unless you're willing to manually review the code yourself. I offer no guarantees!
+I made this for myself, to work on my own device. It is 90% vibe coded, 10% manually tweaked. It should work on any Linux system with a Cinnamon desktop, or any GTK based desktop environment. I've only tested it on Linux Mint Cinnamon 22.2, it may work on other systems, but I've never tested it on anything else. Assume if you use this application it will end in disaster, unless you're willing to manually review the code yourself. I offer no guarantees!
