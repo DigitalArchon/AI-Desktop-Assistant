@@ -894,6 +894,10 @@ class ResultDialogWithChat(Gtk.Window):
         self.assistant = assistant
         self.use_premium_for_followup = False  # Per-conversation premium toggle
         
+        # Validate initial response
+        if not initial_response or not initial_response.strip():
+            initial_response = "Error: Empty response received from the model"
+        
         # Initialize or use provided conversation history
         if conversation_history:
             self.conversation_history = conversation_history
@@ -1308,12 +1312,16 @@ class LLMAssistant:
                                 content = delta.get('content', '')
                                 if content:
                                     result_text += content
-                                    GLib.idle_add(progress_dialog.update_status, 
+                                    GLib.idle_add(progress_dialog.update_status,
                                                 f"Receiving response... ({len(result_text)} chars)")
                         except json.JSONDecodeError:
                             pass
 
-            return result_text if result_text else "No response received"
+            # Validate and clean the result
+            result_text = result_text.strip() if result_text else ""
+            if not result_text:
+                return "Error: No response received from the model"
+            return result_text
 
         except requests.exceptions.Timeout:
             return "Error: Connection timeout"
@@ -1380,7 +1388,7 @@ class LLMAssistant:
             }]
             result = self.call_llm_streaming(self.get_active_text_model(), messages, None, progress_dialog)
 
-            if not progress_dialog.cancelled and result:
+            if not progress_dialog.cancelled and result and result.strip():
                 # Build conversation history for follow-ups
                 conversation_history = [
                     {"role": "user", "content": f"Translate the following text to {self.config.default_language}. Respond in Markdown format. Only provide the translation, no explanations:\n\n{text}"},
@@ -1390,6 +1398,10 @@ class LLMAssistant:
                 GLib.idle_add(self.show_result, "Translation", result, conversation_history)
             elif progress_dialog.cancelled:
                 GLib.idle_add(progress_dialog.destroy)
+            else:
+                # Handle empty response
+                GLib.idle_add(progress_dialog.destroy)
+                GLib.idle_add(self.show_notification, "Error: Received empty response from LLM")
 
         threading.Thread(target=process, daemon=True).start()
 
@@ -1691,7 +1703,7 @@ Please answer the user's question based on both the extracted text and visual de
             }]
             final_result = self.call_llm_streaming(self.get_active_text_model(), query_messages, None, progress_dialog)
 
-            if not progress_dialog.cancelled and final_result:
+            if not progress_dialog.cancelled and final_result and final_result.strip():
                 # Build conversation history with image context
                 conversation_history = [
                     {"role": "user", "content": combined_prompt},
@@ -1701,6 +1713,10 @@ Please answer the user's question based on both the extracted text and visual de
                 GLib.idle_add(self.show_result, "Query Result", final_result, conversation_history)
             elif progress_dialog.cancelled:
                 GLib.idle_add(progress_dialog.destroy)
+            else:
+                # Handle empty response
+                GLib.idle_add(progress_dialog.destroy)
+                GLib.idle_add(self.show_notification, "Error: Received empty response from LLM")
 
         threading.Thread(target=process, daemon=True).start()
 
@@ -1740,7 +1756,7 @@ Please answer the user's question based on the provided text. Respond in {self.c
             }]
             result = self.call_llm_streaming(self.get_active_text_model(), messages, None, progress_dialog)
 
-            if not progress_dialog.cancelled and result:
+            if not progress_dialog.cancelled and result and result.strip():
                 # Build conversation history with text context
                 conversation_history = [
                     {"role": "user", "content": combined_prompt},
@@ -1750,11 +1766,21 @@ Please answer the user's question based on the provided text. Respond in {self.c
                 GLib.idle_add(self.show_result, "Query Result", result, conversation_history)
             elif progress_dialog.cancelled:
                 GLib.idle_add(progress_dialog.destroy)
+            else:
+                # Handle empty response
+                GLib.idle_add(progress_dialog.destroy)
+                GLib.idle_add(self.show_notification, "Error: Received empty response from LLM")
 
         threading.Thread(target=process, daemon=True).start()
 
     def show_result(self, title, markdown_text, conversation_history=None):
         """Show result in a custom dialog with Markdown rendering and follow-up capability"""
+        # Validate that we have actual content to display
+        if not markdown_text or not markdown_text.strip():
+            self.show_notification("Error: Received empty response from LLM")
+            print(f"Warning: Empty response received for '{title}'")
+            return
+        
         # Create interactive result dialog
         ResultDialogWithChat(title, markdown_text, conversation_history, self)
 
